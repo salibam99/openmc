@@ -1,0 +1,1666 @@
+Nuclear Science and Engineering
+
+ISSN: 0029-5639 (Print) 1943-748X (Online) Journal homepage: www.tandfonline.com/journals/unse20
+
+Calculation of Adjoint-Weighted Kinetics
+Parameters in OpenMC Using the Iterated Fission
+Probability Method
+Joﬀrey Dorville , Luke Labrie-Cleary & Paul K. Romano
+To cite this article: Joﬀrey Dorville , Luke Labrie-Cleary & Paul K. Romano (05 Mar 2026):
+Calculation of Adjoint-Weighted Kinetics Parameters in OpenMC Using the Iterated Fission
+Probability Method, Nuclear Science and Engineering, DOI: 10.1080/00295639.2026.2613323
+To link to this article: https://doi.org/10.1080/00295639.2026.2613323
+
+Published online: 05 Mar 2026.
+
+Submit your article to this journal
+
+Article views: 245
+
+View related articles
+
+View Crossmark data
+
+Citing articles: 1 View citing articles
+
+Full Terms & Conditions of access and use can be found at
+https://www.tandfonline.com/action/journalInformation?journalCode=unse20
+
+NUCLEAR SCIENCE AND ENGINEERING
+© 2026 UChicago Argonne, LLC, Operator of Argonne National Laboratory
+DOI: https://doi.org/10.1080/00295639.2026.2613323
+
+Calculation of Adjoint-Weighted Kinetics Parameters in OpenMC
+Using the Iterated Fission Probability Method
+Joffrey Dorville a, Luke Labrie-Cleary b, and Paul K. Romanoa
+a
+
+Computational Science Division, Argonne National Laboratory, Lemont, IL; bDynamic Modelling, Copenhagen
+Atomics A/S, Kastrup, Denmark
+
+Received September 30, 2025
+Accepted for Publication December 23, 2025
+
+Abstract — New capabilities to compute adjoint-weighted kinetics parameters have been developed,
+tested, validated, and made available in OpenMC, an open-source Monte Carlo particle transport
+code. The effective delayed neutron fraction βeff and the effective generation time Λeff are calculated
+using the iterated fission probability (IFP) method. Effective kinetics parameters produced with
+OpenMC are compared to a prior work performed with a developmental branch of OpenMC and
+other results from Serpent and MCNP based on several benchmark cases from the ICSBEP
+(International Criticality Safety Benchmark Evaluation Project). Overall, the results are in good
+agreement with a maximum difference in βeff of 25 pcm and 2.7% for Λeff .
+The results of the new IFP implementation are also compared to design data used in theoretical kinetics
+models for the ARE (Aircraft Reactor Experiment) and the Molten Salt Reactor Experiment (MSRE) when
+the fuel is not circulating. Reasonable agreement was obtained for both experiments with a maximum
+difference in βeff of 54 pcm and 13.4% for Λeff .
+This new feature is fully compatible with shared- and distributed-memory parallelism. The impact of the
+new implementation on code performance was verified to be minimal when IFP was not used with a maximum
+relative difference of 0.2% in peak memory usage and 0.8% in execution time for the model considered. When
+using the new IFP feature, the code performance scaled with the number of processes and threads, as expected.
+Keywords — Kinetics parameters, iterated fission probability, OpenMC.
+
+I. INTRODUCTION
+Kinetics parameters play an essential role in the
+safe operation of nuclear reactors. Having the capabil­
+ity to compute these parameters accurately is impor­
+tant to justify the safety of existing nuclear reactors
+and for the development of advanced designs.
+Effective kinetics parameters for a point reactor are
+derived from transport theory by using the forward
+and adjoint transport equations [1]. Using the notion
+of adjoint flux, the effective delayed neutron fraction
+βeff and the effective generation time Λeff can be
+defined as [1]:
+
+CONTACT Joffrey Dorville
+
+jdorville@anl.gov
+
+βeff ¼
+
+Æψy ; Df ψæ
+;
+Æψy ; Tf ψæ
+
+ð1Þ
+
+Λeff ¼
+
+Æψy ; 1v ψæ
+;
+Æψy ; Tf ψæ
+
+ð2Þ
+
+where the notation hx; yi represents the integral of the product
+of x and y over the integration domain, ψy is the adjoint of the
+neutron flux ψ, Df is the delayed fission production term, Tf is
+the total fission production term, and v is the velocity of
+neutrons. Because the adjoint flux acts as a weighting func­
+tion for βeff and Λeff, these quantities are referred to as adjointweighted kinetics parameters. The effective delayed fraction
+βeff represents the total fraction of delayed neutrons that are
+
+1
+
+2
+
+J. DORVILLE ET AL.
+
+present in the system at a given time weighted by the adjoint
+flux [1]. In practice, an instantaneous reactivity insertion in
+excess of this value will make a nuclear system reach prompt
+criticality. The effective generation time Λeff can be inter­
+preted as how long it takes for a neutron to “reproduce itself”
+by fission [2].
+Eqs. (1) and (2) both use the neutron adjoint flux, which
+is not trivially obtained from standard Monte Carlo (MC)
+neutron transport simulations. While it is possible to solve
+for the adjoint flux directly in multigroup MC neutron
+transport by adjusting the fission and scattering terms [3],
+this technique is not applicable to continuous-energy MC
+neutron transport [4,5]. A common approach used to
+approximate the effective kinetics parameters is to rely on
+the difference between a reference and a perturbed state of
+a system (e.g., the “prompt method” [6] to calculate βeff and
+the “1=v absorber method” [7] to calculate Λeff ). The main
+drawback of this approach is that it requires two full calcu­
+lations of the same system. Another approach that has been
+widely adopted among MC neutron transport solvers,
+including MCNP [5], Serpent [2], and TRIPOLI [8], is the
+iterated fission probability (IFP) method [9]. The founda­
+tional idea behind this method is that the number of fission
+neutrons descending from an initial neutron at a given phase
+space is proportional to the adjoint flux at this phase space
+provided that the neutron flux has already converged to its
+fundamental mode and that the number of generations Ngen
+between the initial neutron and its descendants is suffi­
+ciently large [10]. Tracking the population of descendants
+of a given neutron is possible in continuous-energy MC
+calculations by storing additional data during iterations,
+and thus, can be used to evaluate βeff and Λeff. The only
+unknown parameter needed to use IFP is the number of
+generations Ngen, which must be large enough to converge
+the descendant population while limiting the memory bur­
+den and avoiding an increase in statistical uncertainty
+observed when Ngen is large [8]. Generally, this parameter
+is problem dependent and difficult to predict [5]. A number
+of generations between 10 and 20 is assumed to be sufficient
+for most cases [8]. A specific case of IFP where only the
+next generation is considered is known as the next fission
+probability (NFP) method. More recent work from Peng
+et al. [11] used a developmental branch of OpenMC [12] to
+compute adjoint-weighted kinetics parameters from the
+CLUTCH (contributon-linked eigenvalue sensitivity/uncer­
+tainty estimation via tracklength importance characteriza­
+tion) method described in Ref. [3]. This prior work, which
+also included an implementation of IFP and NFP, was never
+merged into the main branch of OpenMC as it needed
+further development to enable its integration.
+
+In this paper, a new implementation of IFP in
+OpenMC based on the Serpent approach [2] is pre­
+sented. This implementation has been coded from the
+ground up and merged to the develop branch of the
+main OpenMC repository (commit 47ca2916) via a pull
+requesta. The IFP implementation was later corrected
+and merged to the develop branch (commit 767db7e6a)
+via another pull requestb. The main focus of this work
+is to guarantee that the new implementation has mini­
+mal impact on performance when IFP is not used and
+that using multiple processes when IFP is used still
+improves the performance of the code. Several bench­
+mark cases from the International Criticality Safety
+Benchmark Evaluation Project (ICSBEP) [13] were
+used to validate the results of the new IFP implementa­
+tion in OpenMC against the results from Serpent and
+MCNP reported in Ref. [2] and the results from Peng
+et al [11]. Additionally, results from the new imple­
+mentation are compared to design data used in theore­
+tical kinetics models for the Aircraft Reactor
+Experiment (ARE) and the Molten Salt Reactor
+Experiment (MSRE). Particular efforts have been
+made to minimize the impact of this IFP implementa­
+tion on memory and execution time. A performance
+analysis is provided to assess the impact on peak
+memory usage and execution time.
+
+II. METHODS
+Proportionality between the adjoint flux at a given
+location in phase space and the number of descendants in
+a future generation from a common ancestor at the same
+location can be demonstrated using a balance equation
+and proving that the number of descendants is a solution
+to the adjoint transport equation [10]. The underlying
+assumption of this demonstration is that the neutron
+flux in the generation that saw the emission of the com­
+mon ancestor has converged to its fundamental mode and
+that the number of generations between the ancestor and
+the descendants is large enough to see the convergence of
+the number of descendants [10]. Given the form of
+Eqs. (1) and (2), having access to a quantity that is
+proportional to the adjoint flux, namely, the number of
+descendants in a future generation under proper condi­
+tions, is a sufficient condition to solve for the effective
+a
+
+Pull request #3133 (https://github.com/openmc-dev/openmc/pull/
+3133).
+b
+Pull request #3580 (https://github.com/openmc-dev/openmc/pull/
+3580).
+
+NUCLEAR SCIENCE AND ENGINEERING
+kinetics parameters, as proportionality coefficients can­
+cel out.
+The normalized adjoint-weighted delayed fission pro­
+duction term, corresponding to the numerator of Eq. (1)
+divided by the effective multiplication factor keff, can
+therefore be seen as proportional to the sum of weights
+Wdelayed from all neutrons emitted in a generation g that
+descend exclusively from delayed neutrons emitted in
+generation o, which occurs Ngen generations before
+g [2]. The normalization of the adjoint-weighted delayed
+fission production term by keff results from the power
+iteration method used in MC simulations to guarantee
+a stable population over generations. The quantity
+Wdelayed can be estimated by tallying the score
+T1;g [Eq. (3)],
+X
+1
+Æψy ; Df ψæ / Wdelayed � T1;g ¼
+wn δan ;
+keff
+n2Fg
+
+ð3Þ
+
+where n is any neutron emitted by fission in generation
+g causing a new fission event leading to the creation of new
+fission neutrons in generation g + 1. For generation g, these
+neutrons n form the set Fg. The symbol wn corresponds to the
+particle weight of the neutron n. The symbol an corresponds
+to the ancestor of a neutron n that was emitted during gen­
+eration o, and δan is equal to 1 if the ancestor an was a delayed
+neutron or 0 if it was a prompt neutron. Because the popula­
+tion of descendants is not known when the ancestor is emitted
+in generation o in a MC simulation, the evaluation of adjointweighted contributions with Eqs. (1) and (2) can only be
+performed Ngen generations later, when the descendants are
+emitted. In practice, ancestors’ contributions to a specific
+tally need to be passed from each generation to the next by
+keeping the contribution and the ancestor/descendant relation
+in memory. A first algorithm developed in MCNP [5] con­
+sists of separating the total number of active generations into
+blocks composed of an origin generation, multiple latent
+generations, and a final generation. The descendant popula­
+tion of multiple ancestors emitted in the origin generation is
+tracked until the final generation is reached.
+During the final generation, ancestors contributions [e.g.,
+δan in Eq. (3)] are weighted by their descendants’ weights
+and tallied. A second algorithm developed in Serpent [2]
+and adopted in TRIPOLI [8] and the present implementa­
+tion in OpenMC considers every active generation as an
+origin, latent, and final generation instead of relying on
+the block logic. While this approach requires more mem­
+ory as all the particles are potentially contributing to the
+tallies, it is easier to implement [2] and increases the
+number of realizations for the associated tallies [8].
+
+3
+
+Similarly, the normalized adjoint-weighted total neu­
+tron fission production term corresponding to the denomi­
+nator of Eqs. (1) and (2) divided by keff is proportional to
+the sum of weights Wtotal from all neutrons emitted in g [2]
+and can be tallied using the score T2;g [Eq. (4)],
+X
+1
+Æψy ; Tf ψæ / Wtotal � T2;g ¼
+wn :
+keff
+n2Fg
+
+ð4Þ
+
+The numerator of the effective generation time Λeff is directly
+proportional to the sum of weights Wlifetime from all neutrons
+emitted in generation g multiplied by the lifetime of their
+respective ancestor that was emitted in generation o [2]. The
+quantity Wlifetime can be tallied using the score T3;g [Eq. (5)],
+X
+1
+Æψy ; ψæ / Wlifetime � T3;g ¼
+w n l an ;
+v
+n2Fg
+
+ð5Þ
+
+where an (emitted in o) is the ancestor of the neutron
+n (emitted in g). In OpenMC, the lifetime lan of the
+ancestor an is obtained by tracking the time between its
+birth and death. When secondary particles are emitted
+from reactions such as (n,2n), the secondary particle is
+considered born when this particular event occurs. The
+effective delayed neutron fraction and effective genera­
+tion time can then be estimated by tallying the previously
+defined scores (T1;g , T2;g , and T3;g ) for each active gen­
+eration g using IFP tallies (T1, T2, and T3, respectively)
+until all N active generations are simulated [Eqs. (6)
+and (7)],
+N
+P
+
+T1;g
+
+g¼1
+
+βeff � N
+P
+
+¼
+
+T1
+;
+T2
+
+ð6Þ
+
+¼
+
+1 T3
+:
+keff T2
+
+ð7Þ
+
+T2;g
+
+g¼1
+
+N
+P
+
+1 g¼1
+Λeff �
+N
+keff P
+
+T3;g
+T2;g
+
+g¼1
+
+Because the quantities involved in Eqs. (6) and (7) are
+tallied independently, their respective standard deviations
+are also evaluated independently, following the strategy
+that is normally used for regular tally estimators in
+OpenMC. The standard deviations σ βeff and σ Λeff related to
+the estimators of the adjoint-weighted delayed neutron
+
+4
+
+J. DORVILLE ET AL.
+
+fraction βeff and the adjoint-weighted generation time Λeff,
+respectively, are calculated from Eqs. (8) and (9),
+sffi�
+ffiffiffiffiffiffiffiffiffi�
+ffiffiffiffiffiffiffiffiffiffiffi�
+ffiffiffiffiffiffiffiffiffiffi�
+ffiffiffiffiffi
+σ T1 2
+σ T2 2
+σ βeff ¼ βeff �
+;
+þ
+T1
+T2
+sffi�
+ffiffiffiffiffiffiffiffiffi�
+ffiffiffiffiffiffiffiffiffiffiffi�
+ffiffiffiffiffiffiffiffiffiffi�
+ffiffiffiffiffiffiffiffiffiffiffi�
+ffiffiffiffiffiffiffiffiffiffiffi�
+ffiffiffiffiffi
+σ keff 2
+σ T3 2
+σ T2 2
+σ Λeff ¼ Λeff �
+;
+þ
+þ
+T3
+T2
+keff
+
+ð8Þ
+
+ð9Þ
+
+where the σi symbol corresponds to the 1σ standard
+deviation associated with the given tallied quantity i.
+While the tallies involved in the calculation of the effec­
+tive kinetics parameters are obtained from the same simu­
+lation, the uncertainties from Eqs. (8) and (9) are
+calculated by assuming that these tallies are uncorrelated
+variables. The absence of covariance data for this specific
+application is the essential reason for this simplification.
+
+III. IMPLEMENTATION IN OPENMC
+To obtain the effective kinetics parameters as defined
+in Eqs. (6) and (7), a record of the precursor group
+(setting 0 for prompt neutrons by convention) and life­
+time of a given set of ancestors has to be kept for each
+neutron transported during the simulation. The number of
+consecutive neutron ancestors to consider in the IFP
+method is referred to as the number of generations Ngen.
+The optimal value of Ngen is model dependent and is
+generally found empirically by monitoring the conver­
+gence of kinetics parameters for different values of
+Ngen. Ngen, therefore, has been added as a user-defined
+parameter in the settings of OpenMC. It is considered
+constant during the entire simulation, and its default value
+is set to 10. Ngen can be set by the user via the Python
+application programming interface (API) from the fol­
+lowing commands:
+
+Because the number of generation Ngen is deter­
+mined at run time, ancestors’ lifetimes and precursor
+groups are stored in dynamic data containers (vec­
+tors). The memory overhead associated with dynamic
+data containers allocated at run time can have
+a nonnegligible impact on the total memory footprint,
+
+especially when data containers are present in
+a significant number and even if these containers
+are empty (i.e., when the IFP feature is not requested
+by the user). To ensure the memory impact of the IFP
+feature on OpenMC is negligible when it is not
+requested, IFP-related data (precursor group numbers
+and lifetimes of ancestors) are not stored as particle
+attributes, but rather in four global data banks (vec­
+tors of vectors). Two of these banks are dedicated to
+storing vectors of ancestor precursor group numbers
+for every neutron, and the other two contain vectors
+of ancestor lifetimes. The power iteration process
+used in OpenMC requires two separate banks per
+type of data type. One bank (called the source
+bank) is used to store the information relative to the
+source particles of a given generation, while
+the second bank (called the fission bank) holds the
+information relative to the fission sites that result
+from the transport of particles during this generation
+and that will be used as sources in the following
+generation. IFP data sets relative to a given source
+particle are stored in IFP source banks using the same
+index that was used to store the source particle in the
+source bank. Similarly, IFP data sets stored in the IFP
+fission banks use the same index that was used to
+store the fission site in the fission bank. This
+approach guarantees that the IFP implementation in
+OpenMC is thread-safe and can work with multiple
+processes. While using the same data banks for both
+data types with structs containing one integer and one
+floating point value (for the precursor groups and the
+lifetimes, respectively) was initially seen as a more
+effective way to transfer memory between processes
+during parallel execution, the extra padding added to
+the struct for memory alignment was deemed unac­
+ceptable. Having two separate data banks also offers
+the added benefit of being able to calculate βeff and
+Λeff independently.
+Fig. 1 illustrates the integration of the IFP feature in the
+surface tracking algorithm of OpenMC using a simplified
+representation. Modifications performed on OpenMC to
+implement the IFP feature are represented in blue boxes.
+During the simulation, a particle is created by sampling
+available particles from the source bank. The first step of
+the transport algorithm is to identify the distance to the next
+collision. The lifetime of the particle is updated and stored as
+a particle attribute. If no surfaces are crossed before the
+collision occurs, the type of collision is sampled. If a fission
+is sampled, new fission sites are created and stored in the
+fission bank. The calculated lifetime of the particle that gen­
+erated the fission and its precursor group are stored in their
+
+NUCLEAR SCIENCE AND ENGINEERING
+
+5
+
+Fig. 1. Integration of the IFP feature in the surface tracking algorithm of OpenMC.
+
+respective fission banks for each fission site using the same
+index as the fission site index. IFP scores are then tallied from
+the IFP data stored in the source banks. If the particle needs to
+be terminated, the next particle or next batch (generation) can
+be processed.
+Three tallies, which have been specifically imple­
+mented to obtain effective kinetics parameters from the
+IFP method, are named ifp-time-numerator, ifp-betanumerator, and ifp-denominator, corresponding to the
+symbols T3, T1, and T2 in Eqs. (6) and (7), respectively.
+All three tallies use a collision estimator and can be set
+via the Python API of OpenMC from the following
+commands:
+
+Calculating the effective delayed neutron fraction and
+effective generation time is done by retrieving the
+corresponding tally values and keff from the statepoint
+
+6
+
+J. DORVILLE ET AL.
+
+file once the simulation is complete and applying
+Eqs. (6) and (7).
+
+IV. RESULTS AND VALIDATION
+All calculations performed in this section were run
+on a system with a dual-socket Intel Xeon Platinum 8260
+processor with 24 physical cores per processor, each of
+which had two hardware threads per core for a total of
+96 hardware threads. OpenMC was configured to use the
+latest commit 767db7e6a (including both pull requests).
+
+IV.A. ICSBEP Benchmarks
+Table 1 summarizes the ICSBEP benchmark cases
+selected for computational comparison. The results using
+Serpent 2.1.15 and MCNP5 v1.60 were obtained from
+Ref. [2]. The kinetics parameters produced with OpenMC
+were generated for two different nuclear data libraries,
+JEFF-3.1.1 [14] and ENDF/B-VII.1 [15], to allow for
+direct comparison with the results reported in the
+Serpent analysis [2] and in the work from Peng
+et al. [11], respectively. Nuclear data based on JEFF3.1.1 were generated in the OpenMC HDF5 format
+from the original ENDF files using the openmc.data
+module of OpenMC and NJOY 2016.74 [16]. For all
+cases in this section, OpenMC was run using 20 000
+
+particles per batch, 2000 active batches, 100 inactive
+batches, and to be consistent with the Serpent results
+in Ref. [2], 15 generations for IFP.
+Multiplication factors keff, effective generation
+times Λeff, and effective delayed neutron fractions
+βeff obtained for the new IFP implementation of
+OpenMC using JEFF-3.1.1 are presented in Tables
+2–4, respectively, along with the results from
+Serpent and MCNP [2]. The symbols D1 and D2
+represent the absolute difference between OpenMC
+and Serpent (D1) and OpenMC and MCNP (D2),
+respectively, for the variable of interest. Similarly,
+the symbols RD1 and RD2 represent the absolute
+relative difference between OpenMC and Serpent
+(RD1) and OpenMC and MCNP (RD2), respectively,
+using the Serpent or MCNP value in the denominator.
+Overall, the results generated with OpenMC were
+close to the ones reported for Serpent and MCNP
+with a maximum difference in Λeff of 2.2% and 25
+pcm for βeff. Some cases showed larger differences in
+keff (zpr-u9, zpr-heu, stacy-029, stacy-030, and stacy033), which might be due to differences in the mod­
+els used in the respective studies. MC calculations
+can be very sensitive to material definitions, which
+may be slightly different in two models due to how
+densities are normalized. Such discrepancies in the
+material definition could lead to differences in keff
+on the order of several dozens of pcm, and could
+
+TABLE 1
+Summary of Selected Cases from the ICSBEP Benchmark [13]
+
+a
+
+Case
+
+ICSBEP Identifier
+
+Description
+
+godiva
+jezebela
+flattop23
+topsyb
+popsy
+skidoo
+stacy-029
+stacy-030
+stacy-033
+stacy-046
+bigten
+zpr-heu
+zpr-mox
+zpr-pu
+zpr-u9
+stacy-125
+stacy-215
+
+HEU-MET-FAST-001
+PU-MET-FAST-001
+U233-MET-FAST-006
+HEU-MET-FAST-028
+PU-MET-FAST-006
+U233-MET-FAST-001
+LEU-SOL-THERM-004 (run 29)
+LEU-SOL-THERM-007 (run 30)
+LEU-SOL-THERM-004 (run 33)
+LEU-SOL-THERM-004 (run 46)
+IEU-MET-FAST-007
+HEU-MET-INTER-001
+MIX-MET-FAST-011
+PU-MET-INTER-002
+IEU-MET-FAST-010
+LEU-SOL-THERM-016 (run 125)
+LEU-SOL-THERM-021 (run 215)
+
+Sphere of uranium
+Sphere of plutonium
+Sphere of 233U reflected by a shell of uranium
+Sphere of uranium reflected by a shell of uranium
+Sphere of plutonium reflected by a shell of uranium
+Sphere of 233U
+Uranyl nitrate solution reflected by water
+Uranyl nitrate solution
+Uranyl nitrate solution reflected by water
+Uranyl nitrate solution reflected by water
+Mixed uranium metal core reflected by 238U
+235
+U cylinder reflected by stainless steel
+Plutonium and uranium cylinder reflected by graphite
+Plutonium cyclinder reflected by stainless steel and iron
+235
+U cylinder reflected by depleted uranium
+Uranyl nitrate solution reflected by water
+Uranyl nitrate solution
+
+Uses the original sphere radius available before the 2021 update of the ICSBEP Handbook.
+Corresponds to an experiment realized with the flattop system.
+
+b
+
+NUCLEAR SCIENCE AND ENGINEERING
+
+7
+
+TABLE 2
+keff Values for OpenMC, Serpent [2], and MCNP [2] (JEFF-3.1.1 [14])
+Case
+
+OpenMC
+
+Serpent [2]
+
+MCNP [2]
+
+D1 (pcm)
+
+D2 (pcm)
+
+godiva
+jezebel
+flattop23
+topsy
+popsy
+skidoo
+stacy-029
+stacy-030
+stacy-033
+stacy-046
+bigten
+zpr-heu
+zpr-mox
+zpr-pu
+zpr-u9
+stacy-125
+stacy-215
+
+0:99632 � 0:00010
+1:00002 � 0:00010
+1:00606 � 0:00012
+1:00166 � 0:00012
+1:00308 � 0:00012
+1:00424 � 0:00010
+1:00188 � 0:00015
+0:99803 � 0:00014
+0:99997 � 0:00014
+1:00187 � 0:00014
+0:99767 � 0:00011
+1:01616 � 0:00013
+0:99061 � 0:00013
+1:01919 � 0:00014
+0:99134 � 0:00011
+1:00504 � 0:00015
+0:99812 � 0:00014
+
+0:99645 � 0:00006
+1:00002 � 0:00007
+1:00618 � 0:00008
+1:00167 � 0:00007
+1:00277 � 0:00008
+1:00411 � 0:00007
+1:00144 � 0:00006
+0:99745 � 0:00005
+0:99939 � 0:00005
+1:00163 � 0:00005
+0:99774 � 0:00005
+1:01691 � 0:00006
+0:99049 � 0:00007
+1:01891 � 0:00007
+0:98997 � 0:00005
+1:00468 � 0:00006
+0:99795 � 0:00004
+
+0:99638 � 0:00004
+1:00013 � 0:00004
+1:00604 � 0:00005
+1:00179 � 0:00005
+1:00290 � 0:00005
+1:00426 � 0:00004
+1:00166 � 0:00005
+0:99752 � 0:00005
+0:99943 � 0:00004
+1:00172 � 0:00004
+0:99781 � 0:00004
+1:01697 � 0:00005
+0:99046 � 0:00005
+1:01880 � 0:00005
+0:990010 � 0:000030
+1:00484 � 0:00005
+0:99808 � 0:00004
+
+13
+0
+12
+1
+31
+13
+44
+58
+58
+24
+7
+75
+12
+28
+137
+36
+17
+
+6
+11
+2
+13
+18
+2
+22
+51
+54
+15
+14
+81
+15
+39
+133
+20
+4
+
+TABLE 3
+Λeff Values for OpenMC, Serpent [2], and MCNP [2] (JEFF-3.1.1 [14])
+Case
+
+OpenMC
+
+Serpent [2]
+
+MCNP [2]
+
+Unit
+
+RD1 (%)
+
+RD2 (%)
+
+godiva
+jezebel
+flattop23
+topsy
+popsy
+skidoo
+stacy-029
+stacy-030
+stacy-033
+stacy-046
+bigten
+zpr-heu
+zpr-mox
+zpr-pu
+zpr-u9
+stacy-125
+stacy-215
+
+5:712 � 0:008
+2:812 � 0:004
+1:2488 � 0:0035
+1:746 � 0:004
+1:294 � 0:004
+2:6526 � 0:0035
+5:954 � 0:005
+5:858 � 0:005
+6:252 � 0:005
+6:718 � 0:005
+6:203 � 0:009
+9:832 � 0:020
+5:48 � 0:05
+1:2771 � 0:0021
+8:757 � 0:012
+4:890 � 0:004
+6:682 � 0:005
+
+5:711 � 0:004
+2:8060 � 0:0020
+1:2430 � 0:0020
+1:7430 � 0:0020
+1:2950 � 0:0020
+2:6520 � 0:0020
+5:9560 � 0:0020
+5:8570 � 0:0020
+6:2510 � 0:0030
+6:7180 � 0:0030
+6:147 � 0:004
+9:814 � 0:008
+5:580 � 0:027
+1:2760 � 0:0010
+8:775 � 0:006
+4:8800 � 0:0020
+6:6800 � 0:0030
+
+5:714 � 0:004
+2:8090 � 0:0020
+1:2450 � 0:0020
+1:7400 � 0:0020
+1:2990 � 0:0020
+2:6490 � 0:0020
+5:9640 � 0:0030
+5:8550 � 0:0030
+6:2710 � 0:0030
+6:7270 � 0:0030
+6:174 � 0:004
+9:810 � 0:009
+5:603 � 0:026
+1:2750 � 0:0010
+8:819 � 0:005
+4:8830 � 0:0020
+6:6840 � 0:0030
+
+10−9 s
+10−9 s
+10−8 s
+10−8 s
+10−8 s
+10−9 s
+10−5 s
+10−5 s
+10−5 s
+10−5 s
+10−8 s
+10−7 s
+10−7 s
+10−6 s
+10−8 s
+10−5 s
+10−5 s
+
+0.0
+0.2
+0.5
+0.2
+0.1
+0.0
+0.0
+0.0
+0.0
+0.0
+0.9
+0.2
+1.8
+0.1
+0.2
+0.2
+0.0
+
+0.0
+0.1
+0.3
+0.3
+0.4
+0.1
+0.2
+0.1
+0.3
+0.1
+0.5
+0.2
+2.2
+0.2
+0.7
+0.1
+0.0
+
+impact the kinetics parameters. Note that the differ­
+ences in keff for the stacy cases (stacy-029 and stacy033) may also be due to differences in the processing
+of the thermal scattering data.
+The effective generation times Λeff and effective
+delayed fractions βeff obtained for the IFP implementa­
+tion of OpenMC using ENDF/B-VII.1 are presented in
+
+Tables 5 and 6, respectively, along with the results
+from Peng at al [11]. The symbol RD3 corresponds to
+the absolute value of the relative difference between
+the OpenMC and results from Peng et al. [11] using the
+latter as the reference in the denominator. The results
+generated with OpenMC were generally close to the
+results from Peng et al. [11] with the exception of the
+
+8
+
+J. DORVILLE ET AL.
+TABLE 4
+βeff Values in pcm for OpenMC, Serpent [2], and MCNP [2] (JEFF-3.1.1 [14])
+Case
+
+OpenMC
+
+Serpent 2 [2]
+
+MCNP5 [2]
+
+D1
+
+D2
+
+godiva
+jezebel
+flattop23
+topsy
+popsy
+skidoo
+stacy-029
+stacy-030
+stacy-033
+stacy-046
+bigten
+zpr-heu
+zpr-mox
+zpr-pu
+zpr-u9
+stacy-125
+stacy-215
+
+640 � 7
+190 � 3
+384 � 5
+695 � 7
+285 � 5
+288 � 4
+752 � 6
+753 � 6
+747 � 6
+726 � 6
+756 � 7
+684 � 7
+362 � 5
+234 � 4
+725 � 7
+758 � 6
+734 � 6
+
+644 � 3
+189 � 2
+378 � 3
+693 � 3
+285 � 2
+290 � 2
+752 � 3
+752 � 3
+741 � 3
+733 � 3
+731 � 3
+684 � 3
+360 � 2
+229 � 2
+734 � 3
+764 � 3
+740 � 3
+
+647 � 3
+191 � 2
+378 � 3
+685 � 3
+286 � 2
+288 � 2
+747 � 4
+763 � 4
+739 � 4
+741 � 4
+736 � 3
+687 � 4
+359 � 3
+233 � 2
+733 � 3
+764 � 5
+735 � 4
+
+4
+1
+6
+2
+0
+2
+0
+1
+6
+7
+25
+0
+2
+5
+9
+6
+6
+
+7
+1
+6
+10
+1
+0
+5
+10
+8
+15
+20
+3
+3
+1
+8
+6
+1
+
+TABLE 5
+Λeff Values for OpenMC and Peng et al. [11] (ENDF/B-VII.1 [15])
+Case
+
+OpenMC
+
+Peng et al. [11]
+
+Unit
+
+RD3 (%)
+
+godiva
+jezebel
+flattop23
+topsy
+popsy
+skidoo
+stacy-029
+stacy-030
+stacy-033
+stacy-046
+
+5:695 � 0:008
+2:865 � 0:004
+1:263 � 0:004
+1:745 � 0:004
+1:331 � 0:004
+2:723 � 0:004
+5:964 � 0:005
+5:854 � 0:005
+6:262 � 0:005
+6:715 � 0:005
+
+5:691 � 0:005
+2:8750 � 0:0020
+1:2650 � 0:0020
+1:7530 � 0:0020
+0:9270 � 0:0020
+2:7180 � 0:0020
+5:8070 � 0:0030
+5:8320 � 0:0030
+6:1050 � 0:0030
+6:5950 � 0:0030
+
+10−9 s
+10−9 s
+10−8 s
+10−8 s
+10−8 s
+10−9 s
+10−5 s
+10−5 s
+10−5 s
+10−5 s
+
+0.1
+0.3
+0.2
+0.4
+43.6
+0.2
+2.7
+0.4
+2.6
+1.8
+
+popsy case, where the relative difference reported for
+Λeff was 43.6%. Because the same case gives similar
+results between Serpent, MCNP, and the new IFP
+implementation in OpenMC, the authors attribute this
+major outlier to a potential typographical error in the
+results reported in Ref. [11] for the Λeff value of the
+popsy case. Additionally, the relative differences in
+Λeff observed for the water-reflected stacy cases were
+relatively high (2.7%, 2.6%, and 1.8%), which might
+indicate a potential difference in the treatment of ther­
+mal scattering data for water. Excluding the popsy
+case, the maximum relative difference for Λeff was
+2.7% and 10 pcm for βeff.
+
+IV.B. Reactor Models
+As a promising next-generation design concept,
+molten salt reactors (MSRs) remain under active
+research and development today. MSR research began
+at Oak Ridge National Laboratory (ORNL) in the
+1950s. Data from these experiments can be used to
+validate the IFP method for future use in MSR designs.
+The MSRE was a 10-MW MSR constructed at ORNL
+[17] that operated from 1965 to 1969. The ARE was
+a 2.5-MW MSR built at ORNL as a prototype for an
+aircraft reactor that operated for 2 weeks; ARE pre­
+ceded the MSRE by 10 years [18]. Effective kinetics
+
+NUCLEAR SCIENCE AND ENGINEERING
+TABLE 6
+
+TABLE 7
+
+βeff Values in pcm for OpenMC and Peng et al. [11] (ENDF/
+B-VII.1 [15])
+
+Λeff Values from Design Data and OpenMC (ENDF/
+B-VIII.0 [25])
+
+Case
+
+OpenMC
+
+Peng et al.
+[11]
+
+D3
+
+godiva
+jezebel
+flattop23
+topsy
+popsy
+skidoo
+stacy-029
+stacy-030
+stacy-033
+stacy-046
+
+654 � 7
+182 � 3
+360 � 5
+688 � 7
+281 � 5
+284 � 4
+723 � 6
+737 � 6
+733 � 6
+714 � 6
+
+651 � 4
+183 � 2
+367 � 3
+692 � 4
+277 � 2
+289 � 2
+728 � 3
+733 � 3
+723 � 3
+714 � 3
+
+3
+1
+7
+4
+4
+5
+5
+4
+10
+0
+
+parameters were not directly measured during these
+experiments. However, theoretical models were
+designed prior to the experiments to predict several
+aspect of reactor operations, including stability and
+kinetics analysis [17], and prepare operational proce­
+dures [18]. In this section, the computational results
+obtained with OpenMC are compared to the design
+data used in the theoretical models reported for the
+ARE and MSRE [17,18].
+The OpenMC models used in this paper for the ARE
+and MSRE are based on openly available computer-aided
+design (CAD) models developed by Copenhagen Atomicsc.
+The CAD files were meshed using the CAD-to-OpenMC
+tool [19]. For the calculations in this section, OpenMC was
+configured to use DAGMC [20] with a ray tracer built on
+Embree [21] provided by the double-down [22] wrapper,
+instead of the legacy ray tracer based on MOAB [23], to
+obtain better scalability performance, as shown in Ref. [24].
+Both reactors were modeled with no fuel circulation, as this
+feature is not available in OpenMC yet. The models were
+run with the same simulation parameters as the ones used in
+Sec. IV.A: 20 000 particles per batch, 2000 active batches,
+100 inactive batches, and 15 generations for IFP.
+Tables 7 and 8 show the results of the IFP imple­
+mentation in OpenMC using ENDF/B-VIII.0 [25] for the
+generation time and effective delayed neutron fraction,
+respectively, for the ARE and MSRE compared to the
+design data. Estimates of the effective delayed neutron
+fractions using the IFP implementation showed fair
+agreement with the reported values in both cases, with
+a maximum difference of 54 pcm.
+c
+
+ARE: https://github.com/openmsr/are and MSRE: https://github.
+com/openmsr/msre.
+
+a
+
+Case
+
+OpenMC
+(μs)
+
+ARE
+MSRE
+
+128.28 ± 0.14
+272.16 ± 0.23
+
+Design (μs)
+
+Relative
+Difference
+(%)
+
+–
+2.4 x 102
+
+–
+13.4
+
+a
+
+9
+
+p. 9 of Ref. [17].
+
+TABLE 8
+βeff Values (pcm) from Design Data and OpenMC (ENDF/
+B-VIII.0 [25])
+
+a
+
+Case
+
+OpenMC
+
+ARE
+MSRE
+
+676 ± 6
+697 ± 6
+
+Design
+a
+
+730
+666
+
+b
+
+Difference
+54
+31
+
+Fig. D2, p.146, in Ref. [18].
+p. 9 in Ref. [17].
+
+b
+
+The effective generation time was not available in the
+design and experimental reports for the ARE. For the
+MSRE, the reported value had a relative difference of
+13.4% to the computational value calculated with
+OpenMC.
+
+V. PERFORMANCE EVALUATION
+Performance of the new implementation was eval­
+uated by measuring the execution time and memory
+usage using the stacy-029 (LEU-SOL-THERM-004)
+model, run 29, from the ICSBEP [13]. All calculations
+performed in this section were run on the same hard­
+ware as in Sec. IV. OpenMC was run using 400 000
+particles per batch for 20 inactive plus 10 active
+batches and used nuclear data from ENDF/B-VIII.0
+[25]. The execution times were obtained by taking the
+average time of five consecutive OpenMC runs. This
+approach ensured that external factors like job schedul­
+ing had a limited impact on the evaluation. Memory
+usage was obtained by taking the average of the peak
+memory usage from five consecutive OpenMC runs.
+Individual memory usage values for OpenMC pro­
+cesses were measured every 0.5 ms by taking the pro­
+portional set size reported by the psutil Python
+package. Peak memory usage values for each process
+were obtained by taking the maximum value over all
+
+10
+
+J. DORVILLE ET AL.
+
+time steps. The peak memory usage for a run was then
+obtained by summing the peak memory usage values
+for every process.
+
+V.A. Impact of the New IFP Implementation
+The new IFP implementation introduced data
+structures in both the message passing interface
+(MPI) and non-MPI parts of the source code. To
+ensure that the performance was not impacted regard­
+less of whether the executable was compiled with or
+without MPI, both configurations were evaluated.
+Tables 9 and 10 show a comparison of the perfor­
+mance metrics between a reference state and a new
+state containing the IFP implementation. The refer­
+ence state corresponded to the state of the OpenMC
+source code before IFP was implemented (commit
+c1a4d43da in the main OpenMC repository). Because
+IFP was fully implemented from two pull requests,
+OpenMC developments that happened between these
+two pull requests should not be taken into account to
+allow for a fair comparison with the reference state.
+This is why the new state considered here was built
+
+from a custom branch based on the first time the IFP
+feature was merged into the develop branch (commit
+47ca2916 in the main OpenMC repository) and the
+correction (commit 767db7e6a) was applied directly
+after. All runs in this section used 24 threads and
+a single process. As expected, the implementation
+had no significant impact on code performance when
+the IFP method was not used.
+The impact of using the IFP method was evaluated
+by running the model with IFP on and off. The corre­
+sponding results are reported in Table 11. Compared to
+a reference calculation, using IFP in the same conditions
+with the same model for 15 generations significantly
+increased both the execution time (42.1%) and memory
+usage (45.1%). This result was expected, as IFP ulti­
+mately requires storing additional attributes for each par­
+ticle simulated (to store the precursor groups and
+lifetimes of their ancestors).
+
+V.B. Parallel Performance and Scalability
+For this analysis, OpenMC was configured to use
+the new state as defined in Sec. V.A. Fig. 2 represents
+
+TABLE 9
+Peak Memory Usage of the New Implementation When IFP Was Not Used
+
+MPI Enabled
+
+Reference (GB)
+
+New (GB)
+
+Difference (MB)
+
+Relative Difference
+(%)
+
+No
+Yes
+
+0:760 � 0:002
+0:794 � 0:004
+
+0:761 � 0:001
+0:792 � 0:004
+
+1
+2
+
+0.2
+0.2
+
+TABLE 10
+Execution Time of the New Implementation When IFP Was Not Used
+
+MPI Enabled
+
+Reference (s)
+
+New (s)
+
+Difference (s)
+
+Relative Difference
+(%)
+
+No
+Yes
+
+54:45 � 0:10
+56:27 � 0:20
+
+54:88 � 0:07
+56:34 � 0:27
+
+0.43
+0.07
+
+0.8
+0.1
+
+TABLE 11
+Impact of Using IFP on OpenMC Performance
+Metric
+
+IFP Off
+
+IFP On
+
+Difference
+
+Relative Difference
+
+Peak memory usage
+Execution time
+
+0:792 � 0:004 GB
+56:34 � 0:27 s
+
+1:149 � 0:000 GB
+80:1 � 0:6 s
+
+357 MB
+23.72 s
+
+45.1%
+42.1%
+
+NUCLEAR SCIENCE AND ENGINEERING
+
+11
+
+Fig. 2. Peak memory usage per process and execution time as a function of the number of IFP generations and processes for
+parallel calculations.
+
+the peak memory usage divided by the number of
+processes and the execution time obtained as
+a function of the number of processes (1 and 2) and
+the number of generations (10, 15, and 20) using 24
+threads per process. Fig. 3 shows the execution time
+obtained as a function of the number of threads (6, 12,
+and 24) and the number of generations (10, 15, and 20)
+using a single processor. The total memory use did not
+show dependence on the the number of threads. The
+memory use per process was rather dictated by the
+number of particles being simulated per process as
+well as the number of generations used with IFP. As
+expected, these results showed that the execution time
+improved significantly when more processes and more
+threads were used for the observed number of
+generations.
+
+VI. CONCLUSIONS
+The IFP method has been implemented, tested, and
+validated in OpenMC. This new feature allows users to
+compute effective kinetics parameters (effective delayed
+neutron fraction βeff and effective generation time Λeff )
+for their OpenMC model by only adding a new setting
+and requesting three new tallies. It provides an easy way
+to generate the fundamental parameters needed to per­
+form static and transient reactor safety analyses, and only
+necessitates one MC calculation as opposed to the two
+calculations involved in the perturbation-based approach.
+The new feature showed good agreement compared to
+computational results based on cases from the ICSBEP
+benchmark [13] reported for Serpent [2], MCNP [2], and
+a previous developmental branch of OpenMC [11] with
+
+Fig. 3. Execution time as a function of the number of threads and IFP generations for single process calculations.
+
+12
+
+J. DORVILLE ET AL.
+
+a maximum difference in βeff of 25 pcm and 2.7% for
+Λeff. Comparisons to design data used in theoretical
+kinetics models for MSR experiments (ARE and
+MSRE) also showed reasonable agreement with
+a maximum difference in βeff of 54 pcm and 13.4% for
+Λeff. The impact of the new implementation on code
+performance was verified to be minimal when IFP was
+not used with a maximum relative difference of 0.2% in
+peak memory usage and 0.8% in execution time for the
+model considered. When using the new IFP feature, the
+code performance scaled with the number of processes
+and threads, as expected.
+
+Author Contributions
+
+3. C. M. Perfetti, B. T. Rearden, and W. R. Martin, “SCALE
+Continuous-Energy Eigenvalue Sensitivity Coefficient
+Calculations,” Nucl. Sci. Eng., 182, 3, 332 (2016); https://
+doi.org/10.13182/NSE15-12.
+4. C. M. Perfetti, “Advanced Monte Carlo Methods for
+Eigenvalue Sensitivity Coefficient Calculations,” PhD
+Thesis, Nuclear Engineering and Radiological Sciences,
+The University of Michigan (2012).
+5. B. C. Kiedrowski, F. B. Brown, and P. P. H. Wilson,
+“Adjoint-Weighted Tallies for k-Eigenvalue Calculations
+with Continuous-Energy Monte Carlo,” Nucl. Sci. Eng.,
+168, 3, 226 (2011); https://doi.org/10.13182/NSE10-22.
+6. R. K. Meulekamp and S. C. van der Marck, “Calculating
+the Effective Delayed Neutron Fraction with Monte Carlo,”
+Nucl. Sci. Eng., 152, 2, 142 (2006); https://doi.org/10.
+13182/NSE03-107.
+
+CRediT: Joffrey Dorville: Conceptualization, Investigation,
+Methodology, Software, Validation, Visualization, Writing – ori­
+ginal draft, Writing – review & editing; Luke Labrie-Cleary:
+Methodology, Software, Validation, Visualization, Writing – ori­
+ginal draft, Writing – review & editing; Paul K. Romano:
+Conceptualization,
+Funding
+acquisition,
+Investigation,
+Methodology, Project administration, Resources, Software,
+Supervision, Writing – review & editing.
+
+7. B. Verboomen, W. Haeck, and P. Baeten, “Monte Carlo
+Calculation of the Effective Neutron Generation Time,”
+Ann. Nucl. Energy, 33, 10, 911 (2006); https://doi.org/10.
+1016/j.anucene.2006.05.001.
+
+Disclosure Statement
+
+9. H. Hurwitz Jr., Naval Reactors Physics Handbook, Vol. 1,
+p. 864, A. Radkowsky, Ed., Naval Reactors, Division of
+Reactor Development, U.S. Atomic Energy Commission
+(1964).
+
+No potential conflict of interest was reported by the
+authors.
+
+Data Availability Statement
+The Python scripts used to generate the OpenMC mod­
+els and OpenMC models in XML format for the ICSBEP
+benchmark are available at https://doi.org/10.5281/zenodo.
+17238768. All other data are available upon request.
+
+Funding
+This research was supported by a strategic partnership
+project with Copenhagen Atomics A/S. The material was
+based on work supported by the U.S. Department of Energy,
+Office of Science, under contract DE-AC02-06CH11357.
+
+References
+1. G. I. Bell and S. Glasstone, Nuclear Reactor Theory, Van
+Nostrand Reinhold Company, New York (1970).
+2. J. Leppänen et al., “Calculation of Effective Point Kinetics
+Parameters in the Serpent 2 Monte Carlo Code,” Ann. Nucl.
+Energy, 65, 272 (2014); https://doi.org/10.1016/j.anucene.
+2013.10.032.
+
+8. G. Truchet et al., “Computing Adjoint-Weighted Kinetics
+Parameters in Tripoli-4® by the Iterated Fission Probability
+Method,” Ann. Nucl. Energy, 85, 17, 17 (2015); https://doi.
+org/10.1016/j.anucene.2015.04.025.
+
+10. Y. Nauchi and T. Kameyama, “Development of
+Calculation Technique for Iterated Fission Probability
+and
+Reactor
+Kinetic
+Parameters
+Using
+Continuous-Energy Monte Carlo Method,” J. Nucl. Sci.
+Technol., 47, 11, 977 (2010); https://doi.org/10.1080/
+18811248.2010.9711662.
+11. X. Peng et al., “Calculation of Adjoint-Weighted Reactor
+Kinetics Parameters in OpenMC,” Ann. Nucl. Energy, 128,
+231 (2019); https://doi.org/10.1016/j.anucene.2019.01.007.
+12. P. K. Romano et al., “OpenMC: A State-of-the-Art Monte
+Carlo Code for Research and Development,” Ann. Nucl.
+Energy, 82, 90 (2015); https://doi.org/10.1016/j.anucene.
+2014.07.048.
+13. International Criticality Safety Benchmark Evaluation
+Project Handbook: ICSBEP Handbook 2021, Organisation
+for Economic Co-operation and Development/Nuclear
+Energy Agency, Paris, France (2021); https://doi.org/10.
+1787/0235eb97-en.
+14. A. Santamarina et al., “The JEFF-3.1.1 Nuclear Data Library
+—JEFF Report 22—Validation Results from JEF2.2 to JEFF3.1.1,” Organisation for Economic Co-operation and
+Development/Nuclear Energy Agency (2009).
+15. M. Chadwick et al., “ENDF/B-VII.1 Nuclear Data for
+Science and Technology: Cross Sections, Covariances,
+
+NUCLEAR SCIENCE AND ENGINEERING
+Fission Product Yields and Decay Data,” Nucl. Data
+Sheets, 112, 12, 2887 (2011); https://doi.org/10.1016/j.nds.
+2011.11.002.
+16. R. MacFarlane et al., “The NJOY Nuclear Data Processing
+System, Version 2016,” LA-UR-17–20093, Los Alamos
+National Laboratory (2017).
+17. S. J. Ball and T. W. Kerlin, “Stability Analysis of the
+Molten-Salt Reactor Experiment,” ORNL-TM-1070, Oak
+Ridge National Laboratory (1965).
+18. W. B. Cottrell et al., “Operation of the Aircraft Reactor
+Experiment,” ORNL-1845, Oak Ridge National Laboratory
+(1955).
+19. E. B. Knudsen and L. Chierici, “CAD_to_OpenMC:
+From CAD Design to Particle Transport,” J. Open
+Source Softw., 10, 110, 7710 (2025); https://doi.org/10.
+21105/joss.07710.
+20. P. P. H. Wilson et al., “Acceleration Techniques for the
+Direct Use of CAD-Based Geometry in Fusion Neutronics
+
+13
+
+Analysis,” Fusion Eng. Des., 85, 10–12, 1759 (2010);
+https://doi.org/10.1016/j.fusengdes.2010.05.030.
+21. I. Wald et al., “Embree: A Kernel Framework for Efficient
+CPU Ray Tracing,” ACM Trans. Graph., 33, 4, 143:1
+(2014); https://doi.org/10.1145/2601097.2601199.
+22. P. Shriwise, “ Double-Down,” github; https://github.com/
+pshriwise/double-down.
+23. T. J. Tautges et al., “MOAB: A Mesh-Oriented Database,”
+SAND2004–1592, Sandia National Laboratories (2004);
+https://doi.org/10.2172/970174.
+24. S. Yilmaz et al., “CAD and Constructive Solid Geometry
+Modeling of the Molten Salt Reactor Experiment with
+OpenMC,” Front. Nucl. Eng., 3 (2024); https://doi.org/10.
+3389/fnuen.2024.1385478.
+25. D. Brown et al., “ENDF/B-VIII.0: The 8th Major Release of
+the Nuclear Reaction Data Library with CIELO-Project Cross
+Sections, New Standards and Thermal Scattering Data,” Nucl.
+Data Sheets, 148, 1, 1 (2018); https://doi.org/10.1016/j.nds.
+2018.02.001.
+
+

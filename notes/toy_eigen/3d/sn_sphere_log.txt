@@ -1,0 +1,16 @@
+case 1 cells/region=200 S32: k=+1.00025467  dk_dR=+0.09428955  dk_drho_f=+0.39601610  [0s]
+case 1 cells/region=400 S32: k=+1.00025473  dk_dR=+0.09428960  dk_drho_f=+0.39601632  [0s]
+case 1 cells/region=800 S32: k=+1.00025474  dk_dR=+0.09428961  dk_drho_f=+0.39601637  [7s]
+case 1 cells/region=400 S64: k=+1.00021945  dk_dR=+0.09430540  dk_drho_f=+0.39608267  [8s]
+case 1 cells/region=400 S128: k=+1.00021038  dk_dR=+0.09430942  dk_drho_f=+0.39609958  [10s]
+case 1 cells/region=800 S128: k=+1.00021039  dk_dR=+0.09430944  dk_drho_f=+0.39609964  [15s]
+case 1 cells/region=800 S256: k=+1.00020810  dk_dR=+0.09431045  dk_drho_f=+0.39610390  [22s]
+case 1 reference: {"k": 1.0002073305989894, "dk_dR": 0.09431079125058577, "dk_drho_f": 0.39610532325347175, "dlnk_dR": 0.09429124179094579, "dlnk_drho_f": 0.3960232155229837}
+case 2 cells/region=200 S32: k=+1.02312421  dk_da=+0.08847033  dk_db=+0.00921572  dk_drho_f=+0.31358283  dk_drho_r=+0.04674977  [22s]
+case 2 cells/region=400 S32: k=+1.02312394  dk_da=+0.08847057  dk_db=+0.00921562  dk_drho_f=+0.31358318  dk_drho_r=+0.04674974  [25s]
+case 2 cells/region=800 S32: k=+1.02312387  dk_da=+0.08847063  dk_db=+0.00921560  dk_drho_f=+0.31358326  dk_drho_r=+0.04674973  [42s]
+case 2 cells/region=400 S64: k=+1.02309610  dk_da=+0.08848380  dk_db=+0.00921752  dk_drho_f=+0.31361860  dk_drho_r=+0.04677106  [55s]
+case 2 cells/region=400 S128: k=+1.02308900  dk_da=+0.08848715  dk_db=+0.00921802  dk_drho_f=+0.31362762  dk_drho_r=+0.04677650  [65s]
+case 2 cells/region=800 S128: k=+1.02308893  dk_da=+0.08848721  dk_db=+0.00921799  dk_drho_f=+0.31362771  dk_drho_r=+0.04677649  [85s]
+case 2 cells/region=800 S256: k=+1.02308714  dk_da=+0.08848806  dk_db=+0.00921812  dk_drho_f=+0.31362998  dk_drho_r=+0.04677787  [109s]
+case 2 reference: {"k": 1.02308654291931, "dk_da": 0.08848833864507527, "dk_db": 0.009218161028939851, "dk_drho_f": 0.31363074333751184, "dk_drho_r": 0.04677832758211616, "dlnk_da": 0.08649154781430282, "dlnk_db": 0.009010147863578028, "dlnk_drho_f": 0.3065534831907643, "dlnk_drho_r": 0.04572274741160928}

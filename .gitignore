@@ -110,3 +110,10 @@ CMakeSettings.json
 
 # Python pickle files
 *.pkl
+
+# Distance-sensitivity study: numba caches, raw per-seed run data, reference papers
+__pycache__/
+*.nbi
+*.nbc
+notes/**/*.npz
+refs/
